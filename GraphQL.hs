@@ -61,58 +61,24 @@ data SchemaGraph s
   | SchemaObject [(s, SchemaGraph s)]
   deriving (Show)
 
-$(genSingletons [''SchemaGraph])
-
 -- | Kind-level SchemaGraph
 type SchemaGraphK = SchemaGraph Symbol
 -- | Type-level SchemaGraph
 type SchemaGraphT = SchemaGraph Text
 
+$(genSingletons [''SchemaGraph])
+
 -- | A type family converting a SchemaGraph into its return type
-type family FromSchema (schema :: SchemaGraphK)
-type instance FromSchema 'SchemaBool = Bool
-type instance FromSchema 'SchemaInt = Int
-type instance FromSchema 'SchemaDouble = Double
-type instance FromSchema 'SchemaText = Text
-type instance FromSchema 'SchemaScalar = Text
-type instance FromSchema ('SchemaMaybe schema) = Maybe (FromSchema schema)
-type instance FromSchema ('SchemaList schema) = [FromSchema schema]
-type instance FromSchema ('SchemaObject schema) = Object ('SchemaObject schema)
-
--- data FromSchema (schema :: SchemaGraphK) where
---   FromSchemaBool :: Bool -> FromSchema 'SchemaBool
---   FromSchemaInt :: Int -> FromSchema 'SchemaInt
---   FromSchemaDouble :: Double -> FromSchema 'SchemaDouble
---   FromSchemaText :: Text -> FromSchema 'SchemaText
---   FromSchemaScalar :: Text -> FromSchema 'SchemaScalar
---   FromSchemaEnum :: String -> FromSchema ('SchemaEnum keys)
---   FromSchemaMaybe :: Maybe (FromSchema schema) -> FromSchema ('SchemaMaybe schema)
---   FromSchemaList :: [FromSchema schema] -> FromSchema ('SchemaList schema)
---   FromSchemaObject :: Object ('SchemaObject schema) -> FromSchema ('SchemaObject schema)
-
--- class FromTagged (cons :: [Symbol]) e where
---   fromTagged :: String -> e
-
--- class SingI (schema :: SchemaGraphK) => FromSchemaC schema x where
---   castFromSchemaC :: FromSchema schema -> x
--- instance FromSchemaC 'FromSchemaBool Bool where
---   castFromSchemaC (FromSchemaBool b) = b
--- instance FromSchemaC 'FromSchemaInt Int where
---   castFromSchemaC (FromSchemaInt i) = i
--- instance FromSchemaC 'FromSchemaDouble Double where
---   castFromSchemaC (FromSchemaDouble d) = d
--- instance FromSchemaC 'FromSchemaText Text where
---   castFromSchemaC (FromSchemaText t) = t
--- instance FromSchemaC 'FromSchemaScalar Text where
---   castFromSchemaC (FromSchemaScalar t) = t
--- instance FromTagged cons e => FromSchemaC ('FromSchemaEnum cons) e where
---   castFromSchemaC (FromSchemaEnum tagged) = fromTagged tagged
--- instance FromSchemaC schema x => FromSchemaC ('FromSchemaMaybe schema) (Maybe x) where
---   castFromSchemaC (FromSchemaMaybe m) = castFromSchemaC <$> m
--- instance FromSchemaC schema x => FromSchemaC ('FromSchemaList schema) [x] where
---   castFromSchemaC (FromSchemaList l) = castFromSchemaC <$> l
--- instance FromSchemaC schema x => FromSchemaC ('FromSchemaObject schema) (Object ('SchemaObject schema)) where
---   castFromSchemaC (FromSchemaObject o) = o
+type family FromSchema (schema :: SchemaGraphK) where
+  FromSchema 'SchemaBool = Bool
+  FromSchema 'SchemaInt = Int
+  FromSchema 'SchemaDouble = Double
+  FromSchema 'SchemaText = Text
+  FromSchema 'SchemaScalar = Text -- TODO: include function to convert to scalar
+  FromSchema ('SchemaEnum _) = Text -- TODO: include function to convert to enum
+  FromSchema ('SchemaMaybe schema) = Maybe (FromSchema schema)
+  FromSchema ('SchemaList schema) = [FromSchema schema]
+  FromSchema ('SchemaObject schema) = Object ('SchemaObject schema)
 
 fromSchema :: forall schema. SingI schema => Value -> Either SchemaGraphT (FromSchema schema)
 fromSchema = fromSchema' (sing @_ @schema)
@@ -124,7 +90,7 @@ fromSchema = fromSchema' (sing @_ @schema)
       (SSchemaDouble, Aeson.Number n) | Left d <- floatingOrInteger n -> Right d
       (SSchemaText, Aeson.String t) -> Right t
       (SSchemaScalar, Aeson.String t) -> Right t
-      -- (SSchemaEnum typ, Aeson.String t) -> Right $ getEnum typ $ Text.unpack t
+      (SSchemaEnum typ, Aeson.String t) -> Right t
       (SSchemaMaybe _, Aeson.Null) -> Right Nothing
       (SSchemaMaybe inner, v) -> Just <$> fromSchema' inner v
       (SSchemaList inner, Aeson.Array a) -> mapM (fromSchema' inner) $ Vector.toList a
@@ -132,8 +98,6 @@ fromSchema = fromSchema' (sing @_ @schema)
       _ -> Left $ fromSing schema
 
 -- enum stuff
-
--- type family IsGraphQLEnum e :: Bool
 
 -- class (IsGraphQLEnum e ~ True) => GraphQLEnum e where
 --   getEnum :: Proxy e -> String -> e
@@ -163,10 +127,8 @@ type family LookupSchema (key :: Symbol) (schema :: SchemaGraphK) :: SchemaGraph
 
 getKey
   :: forall key schema result
-   -- . (KnownSymbol key, result ~ LookupSchema key schema, FromSchemaC result x)
    . (KnownSymbol key, result ~ LookupSchema key schema, SingI result)
   => Object schema
-  -- -> x
   -> FromSchema result
 getKey (Object object) = case fromSchema @result value of
   Right v -> v
@@ -272,8 +234,6 @@ data StatusState
   | SUCCESS
   deriving (Show,Eq,Enum)
 
--- type instance IsGraphQLEnum StatusState = True
-
 -- instance GraphQLEnum StatusState where
 --   getEnum _ s = case s of
 --     "EXPECTED" -> EXPECTED
@@ -282,14 +242,3 @@ data StatusState
 --     "PENDING" -> PENDING
 --     "SUCCESS" -> SUCCESS
 --     _ -> error $ "Invalid StatusState: " ++ s
-
-type instance FromSchema ('SchemaEnum "StatusState") = StatusState
-
-instance GraphQLEnum "StatusState" StatusState where
-  getEnum _ s = case s of
-    "EXPECTED" -> EXPECTED
-    "ERROR" -> ERROR
-    "FAILURE" -> FAILURE
-    "PENDING" -> PENDING
-    "SUCCESS" -> SUCCESS
-    _ -> error $ "Invalid StatusState: " ++ s
