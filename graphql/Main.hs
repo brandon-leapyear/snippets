@@ -47,8 +47,7 @@ type Schema = 'SchemaObject
                   '[ '( "contexts"
                     , 'SchemaList ('SchemaObject
                       '[ '("context", 'SchemaText)
-                      -- , '("state", 'SchemaEnum StatusState)
-                      , '("state", SchemaEnum "StatusState")
+                      , '("state", SchemaEnum)
                       ])
                     )
                   ])

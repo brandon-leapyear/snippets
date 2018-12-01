@@ -57,7 +57,7 @@ data SchemaGraph s
   | SchemaDouble
   | SchemaText
   | SchemaScalar
-  | SchemaEnum s
+  | SchemaEnum
   | SchemaMaybe (SchemaGraph s)
   | SchemaList (SchemaGraph s)
   | SchemaObject [(s, SchemaGraph s)]
@@ -77,7 +77,7 @@ type family FromSchema (schema :: SchemaGraphK) where
   FromSchema 'SchemaDouble = Double
   FromSchema 'SchemaText = Text
   FromSchema 'SchemaScalar = Text -- TODO: include function to convert to scalar
-  FromSchema ('SchemaEnum _) = Text -- TODO: include function to convert to enum
+  FromSchema 'SchemaEnum = Text -- TODO: include function to convert to enum
   FromSchema ('SchemaMaybe schema) = Maybe (FromSchema schema)
   FromSchema ('SchemaList schema) = [FromSchema schema]
   FromSchema ('SchemaObject schema) = Object ('SchemaObject schema)
@@ -92,7 +92,7 @@ fromSchema = fromSchema' (sing @_ @schema)
       (SSchemaDouble, Aeson.Number n) | Left d <- floatingOrInteger n -> Right d
       (SSchemaText, Aeson.String t) -> Right t
       (SSchemaScalar, Aeson.String t) -> Right t
-      (SSchemaEnum typ, Aeson.String t) -> Right t
+      (SSchemaEnum, Aeson.String t) -> Right t
       (SSchemaMaybe _, Aeson.Null) -> Right Nothing
       (SSchemaMaybe inner, v) -> Just <$> fromSchema' inner v
       (SSchemaList inner, Aeson.Array a) -> mapM (fromSchema' inner) $ Vector.toList a
@@ -106,7 +106,7 @@ fromSchema = fromSchema' (sing @_ @schema)
 -- class (IsGraphQLEnum e ~ True) => GraphQLEnum e where
 --   getEnum :: Proxy e -> String -> e
 
-class result ~ FromSchema ('SchemaEnum enum) => GraphQLEnum enum result where
+class result ~ FromSchema 'SchemaEnum => GraphQLEnum enum result where
   getEnum :: SSymbol enum -> String -> result
 
 -------------------------------------------------------------------------------
