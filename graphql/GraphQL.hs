@@ -17,6 +17,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+module GraphQL where
+
 import Data.Aeson (Value, object, (.=))
 import qualified Data.Aeson as Aeson
 import Data.Coerce (coerce)
@@ -35,10 +37,8 @@ import GHC.TypeLits hiding (Text)
 import qualified GHC.TypeLits as GHC
 
 -------------------------------------------------------------------------------
--- Library code
+-- Object stuff
 -------------------------------------------------------------------------------
-
--- object stuff
 
 newtype Object schema = Object Aeson.Object
   deriving (Show)
@@ -46,7 +46,9 @@ newtype Object schema = Object Aeson.Object
 fromObject :: Object schema -> Aeson.Object
 fromObject = coerce
 
--- schema stuff
+-------------------------------------------------------------------------------
+-- Schema stuff
+-------------------------------------------------------------------------------
 
 -- | A schema for a GraphQL result
 data SchemaGraph s
@@ -97,7 +99,9 @@ fromSchema = fromSchema' (sing @_ @schema)
       (SSchemaObject _, Aeson.Object o) -> Right $ Object o
       _ -> Left $ fromSing schema
 
--- enum stuff
+-------------------------------------------------------------------------------
+-- Enum stuff
+-------------------------------------------------------------------------------
 
 -- class (IsGraphQLEnum e ~ True) => GraphQLEnum e where
 --   getEnum :: Proxy e -> String -> e
@@ -105,7 +109,9 @@ fromSchema = fromSchema' (sing @_ @schema)
 class result ~ FromSchema ('SchemaEnum enum) => GraphQLEnum enum result where
   getEnum :: SSymbol enum -> String -> result
 
--- parse stuff
+-------------------------------------------------------------------------------
+-- Parse stuff
+-------------------------------------------------------------------------------
 
 type family LookupSchema (key :: Symbol) (schema :: SchemaGraphK) :: SchemaGraphK where
   LookupSchema key (SchemaObject schema) = Eval
@@ -150,7 +156,9 @@ getKey (Object object) = case fromSchema @result value of
 f .$ g = fmap f . g
 infixr 9 .$
 
--- query stuff
+-------------------------------------------------------------------------------
+-- Query stuff
+-------------------------------------------------------------------------------
 
 -- execQuery
 --   :: (MonadIO m, IsQueryable result, schema ~ ResultSchema result)
@@ -163,125 +171,3 @@ class IsQueryable result where
   type QueryArgs result = args | args -> result
   type ResultSchema result = (schema :: SchemaGraphK) | schema -> result
   fromArgs :: QueryArgs result -> Value
-
--------------------------------------------------------------------------------
--- Client code
--------------------------------------------------------------------------------
-
-data Args = Args
-  { _repoOwner :: String
-  , _repoName  :: String
-  , _name      :: String
-  }
-
-data Result
-
-type Schema = 'SchemaObject
-  '[ '( "repository"
-    , 'SchemaObject
-      '[ '( "ref"
-        , 'SchemaMaybe ('SchemaObject
-          '[ '( "target"
-            , 'SchemaObject
-              '[ '("oid", 'SchemaScalar)
-              , '("message", 'SchemaMaybe 'SchemaText)
-              , '( "tree"
-                , 'SchemaMaybe ('SchemaObject
-                  '[ '("oid", 'SchemaScalar)
-                  , '("entries", 'SchemaMaybe ('SchemaList ('SchemaObject
-                      '[ '("name", 'SchemaText)
-                      , '("object", 'SchemaMaybe ('SchemaObject
-                          '[ '("text", 'SchemaMaybe 'SchemaText)
-                          ])
-                        )
-                      ]))
-                    )
-                  ])
-                )
-              , '( "status"
-                , 'SchemaMaybe ('SchemaObject
-                  '[ '( "contexts"
-                    , 'SchemaList ('SchemaObject
-                      '[ '("context", 'SchemaText)
-                      -- , '("state", 'SchemaEnum StatusState)
-                      , '("state", SchemaEnum "StatusState")
-                      ])
-                    )
-                  ])
-                )
-              ]
-            )
-          ])
-        )
-      ]
-    )
-  ]
-
-instance IsQueryable Result where
-  type QueryArgs Result = Args
-  type ResultSchema Result = Schema
-  fromArgs args = object
-    [ "repoOwner" .= _repoOwner args
-    , "repoName"  .= _repoName args
-    , "name"      .= _name args
-    ]
-
--- getName :: [get| @branch |] -> Text -- QuasiQuoter should output (Object (SchemaObject ...))
--- getName branch = [get| @branch.name |]
-
--- enum stuff
-
-data StatusState
-  = EXPECTED
-  | ERROR
-  | FAILURE
-  | PENDING
-  | SUCCESS
-  deriving (Show,Eq,Enum)
-
--- instance GraphQLEnum StatusState where
---   getEnum _ s = case s of
---     "EXPECTED" -> EXPECTED
---     "ERROR" -> ERROR
---     "FAILURE" -> FAILURE
---     "PENDING" -> PENDING
---     "SUCCESS" -> SUCCESS
---     _ -> error $ "Invalid StatusState: " ++ s
-
-main :: IO ()
-main = do
-  let asObject = Aeson.Object . HashMap.fromList
-      result = Object
-        ( HashMap.fromList
-            [ ("foo", asObject
-                [ ("bar", Aeson.Number 1)
-                ]
-              )
-            , ("name", Aeson.String "foobar")
-            , ("xs", Aeson.toJSON
-                [ asObject [("x", Aeson.Bool True)]
-                , asObject [("x", Aeson.Bool True)]
-                , asObject [("x", Aeson.Bool False)]
-                ]
-              )
-            ]
-        ) :: Object
-          ( SchemaObject
-            '[ '("foo", SchemaObject
-                  '[ '("bar", SchemaInt)
-                   ]
-                )
-             , '("name", SchemaText)
-             , '("xs", SchemaList (SchemaObject (
-                  '[ '("x", SchemaBool)
-                   ])
-                ))
-             ]
-          )
-  print $ getKey @"foo" result
-  print $ fromObject $ getKey @"foo" result
-  print $ getKey @"bar" $ getKey @"foo" result
-  print $ getKey @"name" result
-  print $ getKey @"xs" result
-  print $ fmap (getKey @"x") $ getKey @"xs" result
-  print $ getKey @"x" .$ getKey @"xs" $ result
