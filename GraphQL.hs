@@ -145,6 +145,11 @@ getKey (Object object) = case fromSchema @result value of
     value = HashMap.lookupDefault missing (Text.pack key) object
     missing = error $ "Key missing from Object: " ++ key
 
+{-# INLINE (.$) #-}
+(.$) :: Functor f => (b -> c) -> (a -> f b) -> a -> f c
+f .$ g = fmap f . g
+infixr 9 .$
+
 -- query stuff
 
 -- execQuery
@@ -242,3 +247,41 @@ data StatusState
 --     "PENDING" -> PENDING
 --     "SUCCESS" -> SUCCESS
 --     _ -> error $ "Invalid StatusState: " ++ s
+
+main :: IO ()
+main = do
+  let asObject = Aeson.Object . HashMap.fromList
+      result = Object
+        ( HashMap.fromList
+            [ ("foo", asObject
+                [ ("bar", Aeson.Number 1)
+                ]
+              )
+            , ("name", Aeson.String "foobar")
+            , ("xs", Aeson.toJSON
+                [ asObject [("x", Aeson.Bool True)]
+                , asObject [("x", Aeson.Bool True)]
+                , asObject [("x", Aeson.Bool False)]
+                ]
+              )
+            ]
+        ) :: Object
+          ( SchemaObject
+            '[ '("foo", SchemaObject
+                  '[ '("bar", SchemaInt)
+                   ]
+                )
+             , '("name", SchemaText)
+             , '("xs", SchemaList (SchemaObject (
+                  '[ '("x", SchemaBool)
+                   ])
+                ))
+             ]
+          )
+  print $ getKey @"foo" result
+  print $ fromObject $ getKey @"foo" result
+  print $ getKey @"bar" $ getKey @"foo" result
+  print $ getKey @"name" result
+  print $ getKey @"xs" result
+  print $ fmap (getKey @"x") $ getKey @"xs" result
+  print $ getKey @"x" .$ getKey @"xs" $ result
