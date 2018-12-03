@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -106,6 +107,11 @@ main = do
                 [ ("bar", Aeson.Number 1)
                 ]
               )
+            , ("baz", Aeson.Number 2)
+            , ("quux", asObject
+                [ ("asdf", Aeson.Number 3)
+                ]
+              )
             , ("name", Aeson.String "foobar")
             , ("xs", Aeson.toJSON
                 [ asObject [("x", Aeson.Null)]
@@ -121,6 +127,11 @@ main = do
                   '[ '("bar", SchemaInt)
                    ]
                 )
+             , '("baz", SchemaInt)
+             , '("quux", SchemaMaybe (SchemaObject
+                  '[ '("asdf", SchemaInt)
+                   ]
+                ))
              , '("name", SchemaText)
              , '("xs", SchemaList (SchemaObject (
                   '[ '("x", SchemaMaybe SchemaBool)
@@ -130,10 +141,23 @@ main = do
              ]
           )
   print $ getKey @"foo" result
+  print [get| result.foo |]
   print $ fromObject $ getKey @"foo" result
+  print $ fromObject [get| result.foo |]
   print $ getKey @"bar" $ getKey @"foo" result
+  print [get| result.foo.bar |]
   print $ getKey @"name" result
+  print [get| result.name |]
   print $ getKey @"xs" result
+  print [get| result.xs |]
   print $ fmap (getKey @"x") $ getKey @"xs" result
-  print $ getKey @"x" .$ getKey @"xs" $ result
+  print [get| result.xs[].x |]
   print $ getKey @"date" result
+  print [get| result.date |]
+  -- print [get| result.quux.asdf |]
+  print [get| result.[foo.bar,baz] |]
+  print [get| result.(foo.bar,name) |]
+  let (bar, baz, xs) = [get| result.(foo.bar,baz,xs) |]
+  print bar
+  print baz
+  print $ map (\elem -> [get| elem.x |]) xs

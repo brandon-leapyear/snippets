@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
@@ -8,6 +9,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
@@ -19,9 +21,11 @@
 
 module GraphQL where
 
+import Control.Monad (void)
 import Data.Aeson (Value, object, (.=))
 import qualified Data.Aeson as Aeson
 import Data.Coerce (coerce)
+import Data.Functor (($>))
 import qualified Data.HashMap.Lazy as HashMap
 import Data.Kind (Type)
 import Data.Proxy (Proxy(..))
@@ -32,9 +36,14 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Typeable (typeRep)
 import qualified Data.Vector as Vector
-import Fcf
+import Data.Void (Void)
+import Fcf (Eval, Find, FromMaybe, Fst, Snd, TyEq, type (<=<), type (=<<))
 import GHC.TypeLits hiding (Text)
 import qualified GHC.TypeLits as GHC
+import Language.Haskell.TH (DecsQ, ExpQ, appE, appTypeE, lamE, listE, litT, mkName, newName, strTyLit, tupE, varE, varP)
+import Language.Haskell.TH.Quote (QuasiQuoter(..))
+import Text.Megaparsec (Parsec, between, choice, eof, optional, many, parseErrorPretty, runParser, sepBy1, (<|>))
+import Text.Megaparsec.Char (alphaNumChar, char, lowerChar, space, string)
 
 -------------------------------------------------------------------------------
 -- Object stuff
@@ -151,10 +160,122 @@ getKey (Object object) = case fromSchema @result value of
     value = HashMap.lookupDefault missing (Text.pack key) object
     missing = error $ "Key missing from Object: " ++ key
 
-{-# INLINE (.$) #-}
-(.$) :: Functor f => (b -> c) -> (a -> f b) -> a -> f c
-f .$ g = fmap f . g
-infixr 9 .$
+-------------------------------------------------------------------------------
+-- Getter stuff
+-------------------------------------------------------------------------------
+
+type Parser = Parsec Void String
+
+parse :: Monad m => Parser a -> String -> m a
+parse parser s = either (fail . parseErrorPretty) return $ runParser parser s s
+
+data GetterExp = GetterExp
+  { start       :: String
+  , getterOps   :: GetterOps
+  } deriving (Show)
+
+getterExp :: Parser GetterExp
+getterExp = do
+  space
+  start <- identifier
+  getterOps <- many getterOp
+  space
+  void eof
+  return GetterExp{..}
+
+data GetterDecs = GetterDecs
+  { startSchema :: String
+  , endSchema   :: String
+  , getterOps   :: GetterOps
+  } deriving (Show)
+
+getterDecs :: Parser GetterDecs
+getterDecs = do
+  space
+  startSchema <- identifier
+  space
+  string ">"
+  space
+  getterOps <- many getterOp
+  space
+  string ">"
+  space
+  endSchema <- identifier
+  space
+  void eof
+  return GetterDecs{..}
+
+type GetterOps = [GetterOperation]
+
+data GetterOperation
+  = GetterKey String
+  | GetterKeyList [GetterOps]
+  | GetterKeyTuple [GetterOps]
+  | GetterBang
+  | GetterList
+  deriving (Show)
+
+identifier :: Parser String
+identifier = (:) <$> lowerChar <*> many (alphaNumChar <|> char '\'')
+
+getterOp :: Parser GetterOperation
+getterOp = choice
+  [ string "!" $> GetterBang
+  , string "[]" $> GetterList
+  , optional (string ".") *> choice
+      [ fmap GetterKey identifier
+      , fmap GetterKeyList $ between (string "[") (string "]") $ many getterOp `sepBy1` string ","
+      , fmap GetterKeyTuple $ between (string "(") (string ")") $ many getterOp `sepBy1` string ","
+      ]
+  ]
+
+generateGetterExp :: String -> ExpQ
+generateGetterExp input = do
+  GetterExp{..} <- parse getterExp input
+  appE (mkGetter getterOps) (varE $ mkName start)
+  where
+    mkGetter [] = [| id |]
+    mkGetter (op:ops) =
+      let next = mkGetter ops
+      in case op of
+        GetterKey key ->
+          let getKey' = appTypeE [|getKey|] (litT $ strTyLit key)
+          in [| $(next) . $(getKey') |]
+        GetterKeyList ops -> do
+          val <- newName "v"
+          lamE [varP val] (listE $ applyValToOps val ops)
+        GetterKeyTuple ops -> do
+          val <- newName "v"
+          lamE [varP val] (tupE $ applyValToOps val ops)
+        GetterBang -> [| $(next) . fromJust |]
+        GetterList -> [| ($(next) <$>) |]
+    applyValToOps val ops = map ((`appE` varE val) . mkGetter) ops
+
+generateGetterDecs :: String -> DecsQ
+generateGetterDecs input = do
+  GetterDecs{..} <- parse getterDecs input
+  undefined
+
+-- [get| result.repository.ref!.target |]
+--   ==> getKey @"target" . fromJust . getKey @"ref" . getKey @"repository" $ result
+get :: QuasiQuoter
+get = QuasiQuoter
+  { quoteExp = generateGetterExp
+  , quoteDec = error "Cannot use `get` for Dec"
+  , quoteType = error "Cannot use `get` for Type"
+  , quotePat = error "Cannot use `get` for Pat"
+  }
+
+-- [getter| Branch.Schema > repository.ref!.target > Branch |]
+--   ==> type BranchSchema = ...
+--   ==> getBranch :: Object (...) -> Object BranchSchema
+getter :: QuasiQuoter
+getter = QuasiQuoter
+  { quoteExp = error "Cannot use `getter` for Exp"
+  , quoteDec = generateGetterDecs
+  , quoteType = error "Cannot use `getter` for Type"
+  , quotePat = error "Cannot use `getter` for Pat"
+  }
 
 -------------------------------------------------------------------------------
 -- Query stuff
