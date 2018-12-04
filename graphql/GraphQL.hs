@@ -43,7 +43,7 @@ import GHC.TypeLits hiding (Text)
 import qualified GHC.TypeLits as GHC
 import Language.Haskell.TH (Dec(..), DecsQ, ExpQ, Info(..), TyLit(..), Type(..), appE, appT, appTypeE, arrowT, clause, conT, funD, lamE, listE, litT, lookupTypeName, mkName, newName, normalB, reify, runIO, sigD, strTyLit, tupE, tySynD, varE, varP)
 import Language.Haskell.TH.Quote (QuasiQuoter(..))
-import Text.Megaparsec (Parsec, between, choice, eof, optional, many, parseErrorPretty, runParser, sepBy1, (<|>))
+import Text.Megaparsec (Parsec, between, choice, eof, optional, many, parseErrorPretty, runParser, sepBy1, some, (<|>))
 import Text.Megaparsec.Char (alphaNumChar, char, lowerChar, space, string, upperChar)
 import Debug.Trace
 
@@ -187,8 +187,8 @@ getterOp = choice
   , choice [string "?", string "[]"] $> GetterMap
   , optional (string ".") *> choice
       [ fmap GetterKey $ identifier lowerChar
-      , fmap GetterKeyList $ between (string "[") (string "]") $ many getterOp `sepBy1` string ","
-      , fmap GetterKeyTuple $ between (string "(") (string ")") $ many getterOp `sepBy1` string ","
+      , fmap GetterKeyList $ between (string "[") (string "]") $ some getterOp `sepBy1` string ","
+      , fmap GetterKeyTuple $ between (string "(") (string ")") $ some getterOp `sepBy1` string ","
       ]
   ]
 
