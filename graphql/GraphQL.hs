@@ -170,14 +170,14 @@ parse :: Monad m => Parser a -> String -> m a
 parse parser s = either (fail . parseErrorPretty) return $ runParser parser s s
 
 data GetterExp = GetterExp
-  { start       :: String
+  { start       :: Maybe String
   , getterOps   :: GetterOps
   } deriving (Show)
 
 getterExp :: Parser GetterExp
 getterExp = do
   space
-  start <- identifier
+  start <- optional identifier
   getterOps <- many getterOp
   space
   void eof
@@ -232,7 +232,12 @@ getterOp = choice
 generateGetterExp :: String -> ExpQ
 generateGetterExp input = do
   GetterExp{..} <- parse getterExp input
-  appE (mkGetter getterOps) (varE $ mkName start)
+  let apply = appE (mkGetter getterOps) . varE
+  case start of
+    Nothing -> do
+      arg <- newName "x"
+      lamE [varP arg] (apply arg)
+    Just arg -> apply $ mkName arg
   where
     mkGetter [] = [| id |]
     mkGetter (op:ops) =

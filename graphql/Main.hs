@@ -160,4 +160,4 @@ main = do
   let (bar, baz, xs) = [get| result.(foo.bar,baz,xs) |]
   print bar
   print baz
-  print $ map (\elem -> [get| elem.x |]) xs
+  print $ map [get| .x |] xs
