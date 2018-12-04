@@ -8,6 +8,7 @@ import Data.Aeson (object, (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.HashMap.Lazy as HashMap
 import GraphQL
+import Schema
 
 -------------------------------------------------------------------------------
 -- Auto-generated stuff
@@ -70,9 +71,6 @@ instance IsQueryable Result where
     , "name"      .= _name args
     ]
 
--- getName :: [get| @branch |] -> Text -- QuasiQuoter should output (Object (SchemaObject ...))
--- getName branch = [get| @branch.name |]
-
 -------------------------------------------------------------------------------
 -- Enum stuff
 -------------------------------------------------------------------------------
@@ -98,6 +96,13 @@ data StatusState
 -- Test main code
 -------------------------------------------------------------------------------
 
+[getter| MySchema > quux! > Quux |]
+[getter| MySchema > .[foo.bar,baz] > FooBarBaz |]
+[getter| MySchema > .(foo.bar,date) > FooBarDate |]
+
+parseAsdf :: Quux -> Int
+parseAsdf = [get| .asdf |]
+
 main :: IO ()
 main = do
   let asObject = Aeson.Object . HashMap.fromList
@@ -121,25 +126,9 @@ main = do
               )
             , ("date", Aeson.String "12/25/1970")
             ]
-        ) :: Object
-          ( SchemaObject
-            '[ '("foo", SchemaObject
-                  '[ '("bar", SchemaInt)
-                   ]
-                )
-             , '("baz", SchemaInt)
-             , '("quux", SchemaMaybe (SchemaObject
-                  '[ '("asdf", SchemaInt)
-                   ]
-                ))
-             , '("name", SchemaText)
-             , '("xs", SchemaList (SchemaObject (
-                  '[ '("x", SchemaMaybe SchemaBool)
-                   ])
-                ))
-             , '("date", SchemaMaybe SchemaScalar)
-             ]
-          )
+        ) :: Object MySchema
+
+  putStrLn ">>> Gets"
   print [get| result.foo |]
   print $ fromObject [get| result.foo |]
   print [get| result.foo.bar |]
@@ -154,3 +143,8 @@ main = do
   let (bar, baz, xs) = [get| result.(foo.bar,baz,xs) |]
   print (bar, baz)
   print $ map [get| .x |] xs
+
+  putStrLn ">>> Getters"
+  print $ parseAsdf $ getQuux result
+  print $ getFooBarBaz result
+  print $ getFooBarDate result
