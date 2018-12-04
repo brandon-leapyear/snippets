@@ -212,7 +212,7 @@ data GetterOperation
   | GetterKeyList [GetterOps]
   | GetterKeyTuple [GetterOps]
   | GetterBang
-  | GetterList
+  | GetterMap
   deriving (Show)
 
 identifier :: Parser String
@@ -221,7 +221,7 @@ identifier = (:) <$> lowerChar <*> many (alphaNumChar <|> char '\'')
 getterOp :: Parser GetterOperation
 getterOp = choice
   [ string "!" $> GetterBang
-  , string "[]" $> GetterList
+  , choice [string "?", string "[]"] $> GetterMap
   , optional (string ".") *> choice
       [ fmap GetterKey identifier
       , fmap GetterKeyList $ between (string "[") (string "]") $ many getterOp `sepBy1` string ","
@@ -248,7 +248,7 @@ generateGetterExp input = do
           val <- newName "v"
           lamE [varP val] (tupE $ applyValToOps val ops)
         GetterBang -> [| $(next) . fromJust |]
-        GetterList -> [| ($(next) <$>) |]
+        GetterMap -> [| ($(next) <$>) |]
     applyValToOps val ops = map ((`appE` varE val) . mkGetter) ops
 
 generateGetterDecs :: String -> DecsQ
