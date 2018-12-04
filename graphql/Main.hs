@@ -154,6 +154,7 @@ main = do
   print [get| result.xs[].x |]
   print $ getKey @"date" result
   print [get| result.date |]
+  print [get| result.date! |]
   print [get| result.quux?.asdf |]
   print [get| result.[foo.bar,baz] |]
   print [get| result.(foo.bar,name) |]

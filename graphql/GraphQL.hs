@@ -28,6 +28,7 @@ import Data.Coerce (coerce)
 import Data.Functor (($>))
 import qualified Data.HashMap.Lazy as HashMap
 import Data.Kind (Type)
+import Data.Maybe (fromJust)
 import Data.Proxy (Proxy(..))
 import Data.Scientific (floatingOrInteger)
 import Data.Singletons.TH (Sing, SingI, SomeSing(..), fromSing, genSingletons, sing, toSing)
