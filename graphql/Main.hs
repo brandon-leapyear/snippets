@@ -140,25 +140,17 @@ main = do
              , '("date", SchemaMaybe SchemaScalar)
              ]
           )
-  print $ getKey @"foo" result
   print [get| result.foo |]
-  print $ fromObject $ getKey @"foo" result
   print $ fromObject [get| result.foo |]
-  print $ getKey @"bar" $ getKey @"foo" result
   print [get| result.foo.bar |]
-  print $ getKey @"name" result
   print [get| result.name |]
-  print $ getKey @"xs" result
   print [get| result.xs |]
-  print $ fmap (getKey @"x") $ getKey @"xs" result
   print [get| result.xs[].x |]
-  print $ getKey @"date" result
   print [get| result.date |]
   print [get| result.date! |]
   print [get| result.quux?.asdf |]
   print [get| result.[foo.bar,baz] |]
   print [get| result.(foo.bar,name) |]
   let (bar, baz, xs) = [get| result.(foo.bar,baz,xs) |]
-  print bar
-  print baz
+  print (bar, baz)
   print $ map [get| .x |] xs
