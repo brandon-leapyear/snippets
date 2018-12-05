@@ -20,5 +20,5 @@ type MySchema = 'SchemaObject
         '[ '("x", 'SchemaMaybe 'SchemaBool)
          ])
       ))
-   , '("date", 'SchemaMaybe 'SchemaScalar)
+   , '("date", 'SchemaMaybe 'SchemaText)
    ]

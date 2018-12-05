@@ -29,11 +29,11 @@ type Schema = 'SchemaObject
         , 'SchemaMaybe ('SchemaObject
           '[ '( "target"
             , 'SchemaObject
-              '[ '("oid", 'SchemaScalar)
+              '[ '("oid", 'SchemaInt)
               , '("message", 'SchemaMaybe 'SchemaText)
               , '( "tree"
                 , 'SchemaMaybe ('SchemaObject
-                  '[ '("oid", 'SchemaScalar)
+                  '[ '("oid", 'SchemaInt)
                   , '("entries", 'SchemaMaybe ('SchemaList ('SchemaObject
                       '[ '("name", 'SchemaText)
                       , '("object", 'SchemaMaybe ('SchemaObject
@@ -49,7 +49,6 @@ type Schema = 'SchemaObject
                   '[ '( "contexts"
                     , 'SchemaList ('SchemaObject
                       '[ '("context", 'SchemaText)
-                      , '("state", SchemaEnum)
                       ])
                     )
                   ])
@@ -70,27 +69,6 @@ instance IsQueryable Result where
     , "repoName"  .= _repoName args
     , "name"      .= _name args
     ]
-
--------------------------------------------------------------------------------
--- Enum stuff
--------------------------------------------------------------------------------
-
-data StatusState
-  = EXPECTED
-  | ERROR
-  | FAILURE
-  | PENDING
-  | SUCCESS
-  deriving (Show,Eq,Enum)
-
--- instance GraphQLEnum StatusState where
---   getEnum _ s = case s of
---     "EXPECTED" -> EXPECTED
---     "ERROR" -> ERROR
---     "FAILURE" -> FAILURE
---     "PENDING" -> PENDING
---     "SUCCESS" -> SUCCESS
---     _ -> error $ "Invalid StatusState: " ++ s
 
 -------------------------------------------------------------------------------
 -- Test main code
