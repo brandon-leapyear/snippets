@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
@@ -27,7 +28,7 @@ import qualified Data.Aeson as Aeson
 import Data.Coerce (coerce)
 import Data.Functor (($>))
 import qualified Data.HashMap.Lazy as HashMap
-import Data.Kind (Type)
+import qualified Data.Kind as Kind
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Scientific (floatingOrInteger)
@@ -51,11 +52,25 @@ import Debug.Trace
 -- Object stuff
 -------------------------------------------------------------------------------
 
-newtype Object schema = Object Aeson.Object
+newtype Object (schema :: SchemaGraphK) = Object Aeson.Object
   deriving (Show)
 
 fromObject :: Object schema -> Aeson.Object
 fromObject = coerce
+
+-------------------------------------------------------------------------------
+-- Enum stuff
+-------------------------------------------------------------------------------
+
+class GraphQLEnum e where
+  getEnum :: String -> e
+
+type family ToEnum (s :: Symbol) :: Kind.Type
+
+parseValueEnum :: forall e. GraphQLEnum e => Value -> Maybe e
+parseValueEnum = \case
+  Aeson.String t -> Just $ getEnum @e $ Text.unpack t
+  _ -> Nothing
 
 -------------------------------------------------------------------------------
 -- Schema stuff
@@ -67,6 +82,7 @@ data SchemaGraph s
   | SchemaInt
   | SchemaDouble
   | SchemaText
+  | SchemaEnum s
   | SchemaMaybe (SchemaGraph s)
   | SchemaList (SchemaGraph s)
   | SchemaObject [(s, SchemaGraph s)]
@@ -77,32 +93,60 @@ type SchemaGraphK = SchemaGraph Symbol
 -- | Type-level SchemaGraph
 type SchemaGraphT = SchemaGraph Text
 
+-- | Generates functions that can bring schemas from the type level to the term level.
 $(genSingletons [''SchemaGraph])
 
--- | A type family converting a SchemaGraph into its return type
-type family FromSchema (schema :: SchemaGraphK) where
-  FromSchema 'SchemaBool = Bool
-  FromSchema 'SchemaInt = Int
-  FromSchema 'SchemaDouble = Double
-  FromSchema 'SchemaText = Text
-  FromSchema ('SchemaMaybe schema) = Maybe (FromSchema schema)
-  FromSchema ('SchemaList schema) = [FromSchema schema]
-  FromSchema ('SchemaObject schema) = Object ('SchemaObject schema)
+-- | Constraints to be put on results for a given schema type.
+type family ResultConstraints (schema :: SchemaGraphK) result :: Kind.Constraint where
+  ResultConstraints ('SchemaEnum _) result = GraphQLEnum result
+  ResultConstraints _ _ = ()
 
-fromSchema :: forall schema. SingI schema => Value -> Either SchemaGraphT (FromSchema schema)
-fromSchema = fromSchema' (sing @_ @schema)
-  where
-    fromSchema' :: forall schema'. SSchemaGraph schema' -> Value -> Either SchemaGraphT (FromSchema schema')
-    fromSchema' schema value = case (schema, value) of
-      (SSchemaBool, Aeson.Bool b) -> Right b
-      (SSchemaInt, Aeson.Number n) | Right i <- floatingOrInteger n -> Right i
-      (SSchemaDouble, Aeson.Number n) | Left d <- floatingOrInteger n -> Right d
-      (SSchemaText, Aeson.String t) -> Right t
-      (SSchemaMaybe _, Aeson.Null) -> Right Nothing
-      (SSchemaMaybe inner, v) -> Just <$> fromSchema' inner v
-      (SSchemaList inner, Aeson.Array a) -> mapM (fromSchema' inner) $ Vector.toList a
-      (SSchemaObject _, Aeson.Object o) -> Right $ Object o
-      _ -> Left $ fromSing schema
+-- | A type-class for types that can be parsed from JSON for an associated schema type.
+class FromSchema result where
+  type ToSchema result = (schema :: SchemaGraphK) | schema -> result
+  parseValue :: Value -> Maybe result
+
+instance FromSchema Bool where
+  type ToSchema Bool = 'SchemaBool
+  parseValue = \case
+    Aeson.Bool b -> Just b
+    _ -> Nothing
+
+instance FromSchema Int where
+  type ToSchema Int = 'SchemaInt
+  parseValue = \case
+    Aeson.Number n | Right i <- floatingOrInteger n -> Just i
+    _ -> Nothing
+
+instance FromSchema Double where
+  type ToSchema Double = 'SchemaDouble
+  parseValue = \case
+    Aeson.Number n | Left i <- floatingOrInteger n -> Just i
+    _ -> Nothing
+
+instance FromSchema Text where
+  type ToSchema Text = 'SchemaText
+  parseValue = \case
+    Aeson.String t -> Just t
+    _ -> Nothing
+
+instance FromSchema inner => FromSchema (Maybe inner) where
+  type ToSchema (Maybe inner) = ('SchemaMaybe (ToSchema inner))
+  parseValue = \case
+    Aeson.Null -> Just Nothing
+    v -> Just <$> parseValue v
+
+instance FromSchema inner => FromSchema [inner] where
+  type ToSchema [inner] = ('SchemaList (ToSchema inner))
+  parseValue = \case
+    Aeson.Array a -> mapM parseValue $ Vector.toList a
+    _ -> Nothing
+
+instance FromSchema (Object ('SchemaObject inner)) where
+  type ToSchema (Object ('SchemaObject inner)) = 'SchemaObject inner
+  parseValue = \case
+    Aeson.Object o -> Just $ Object o
+    _ -> Nothing
 
 -------------------------------------------------------------------------------
 -- Parse stuff
@@ -127,24 +171,25 @@ type family LookupSchema (key :: Symbol) (schema :: SchemaGraphK) :: SchemaGraph
     )
 
 getKey
-  :: forall key schema result
-   . (KnownSymbol key, result ~ LookupSchema key schema, SingI result)
+  :: forall key schema endSchema result
+   . ( KnownSymbol key                     -- for symbolVal
+     , SingI schema                        -- to print schema for debugging
+     , endSchema ~ LookupSchema key schema -- lookup key in schema for resulting schema
+     , ToSchema result ~ endSchema         -- the final result type's associated schema should match resulting schema
+     , FromSchema result                   -- ensure result can be converted from a JSON object
+     , ResultConstraints endSchema result  -- add any additional constraints on the result type
+     )
   => Object schema
-  -> FromSchema result
-getKey (Object object) = case fromSchema @result value of
-  Right v -> v
-  Left schema -> error $ concat
-    [ "Could not cast `"
-    , show value
-    , "` at key '"
-    , key
-    , "' with schema: "
-    , show schema
-    ]
+  -> result
+getKey (Object object) = case parseValue @result value of
+  Just v -> v
+  Nothing -> error $ concat
+    ["Could not cast `", show value, "` at key '", key, "' with schema: ", show schema]
   where
     key = symbolVal (Proxy @key)
     value = HashMap.lookupDefault missing (Text.pack key) object
     missing = error $ "Key missing from Object: " ++ key
+    schema = fromSing $ sing @_ @schema
 
 -------------------------------------------------------------------------------
 -- Getter stuff
@@ -296,8 +341,16 @@ generateGetterDecs GetterDecs{..} = do
       PromotedNilT -> []
       t -> error $ "Could not get object schema: " ++ show t
     fromSchemaType schema = case unSig schema of
-      AppT (PromotedT ty) _ -> [t| FromSchema $(pure schema) |]
-      PromotedT ty -> [t| FromSchema $(pure schema) |]
+      AppT (PromotedT ty) inner
+        | ty == 'SchemaEnum -> [t| ToEnum $(pure inner) |]
+        | ty == 'SchemaMaybe -> [t| Maybe $(fromSchemaType inner) |]
+        | ty == 'SchemaList -> [t| [$(fromSchemaType inner)] |]
+        | ty == 'SchemaObject -> [t| Object $(pure schema) |]
+      PromotedT ty
+        | ty == 'SchemaBool -> [t| Bool |]
+        | ty == 'SchemaInt -> [t| Int |]
+        | ty == 'SchemaDouble -> [t| Double |]
+        | ty == 'SchemaText -> [t| Text |]
       AppT t1 t2 -> appT (fromSchemaType t1) (fromSchemaType t2)
       TupleT _ -> pure schema
       _ -> error $ "Could not convert schema: " ++ show schema

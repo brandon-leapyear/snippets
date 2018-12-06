@@ -77,6 +77,7 @@ instance IsQueryable Result where
 [getter| MySchema > quux! > Quux |]
 [getter| MySchema > .[foo.bar,baz] > FooBarBaz |]
 [getter| MySchema > .(foo.bar,date) > FooBarDate |]
+[getter| MySchema > state > ResultState |]
 
 parseAsdf :: Quux -> Int
 parseAsdf = [get| .asdf |]
@@ -103,6 +104,7 @@ main = do
                 ]
               )
             , ("date", Aeson.String "12/25/1970")
+            , ("state", Aeson.String "OPEN")
             ]
         ) :: Object MySchema
 
@@ -115,6 +117,7 @@ main = do
   print [get| result.xs[].x |]
   print [get| result.date |]
   print [get| result.date! |]
+  print [get| result.state |]
   print [get| result.quux?.asdf |]
   print [get| result.[foo.bar,baz] |]
   print [get| result.(foo.bar,name) |]
@@ -126,3 +129,4 @@ main = do
   print $ parseAsdf $ getQuux result
   print $ getFooBarBaz result
   print $ getFooBarDate result
+  print $ getResultState result

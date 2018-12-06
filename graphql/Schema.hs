@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Schema where
 
@@ -21,4 +22,19 @@ type MySchema = 'SchemaObject
          ])
       ))
    , '("date", 'SchemaMaybe 'SchemaText)
+   , '("state", 'SchemaEnum "MyState")
    ]
+
+data MyState = OPEN | CLOSED deriving (Show)
+
+instance GraphQLEnum MyState where
+  getEnum s = case s of
+    "OPEN" -> OPEN
+    "CLOSED" -> CLOSED
+    _ -> error $ "Bad MyState: " ++ s
+
+type instance ToEnum "MyState" = MyState
+
+instance FromSchema MyState where
+  type ToSchema MyState = 'SchemaEnum "MyState"
+  parseValue = parseValueEnum
