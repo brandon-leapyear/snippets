@@ -59,6 +59,20 @@ fromObject :: Object schema -> Aeson.Object
 fromObject = coerce
 
 -------------------------------------------------------------------------------
+-- Scalar stuff
+-------------------------------------------------------------------------------
+
+class GraphQLScalar e where
+  getScalar :: String -> e
+
+type family ToScalar (s :: Symbol) :: Kind.Type
+
+parseValueScalar :: forall e. GraphQLScalar e => Value -> Maybe e
+parseValueScalar = \case
+  Aeson.String t -> Just $ getScalar @e $ Text.unpack t
+  _ -> Nothing
+
+-------------------------------------------------------------------------------
 -- Enum stuff
 -------------------------------------------------------------------------------
 
@@ -82,6 +96,7 @@ data SchemaGraph s
   | SchemaInt
   | SchemaDouble
   | SchemaText
+  | SchemaScalar s
   | SchemaEnum s
   | SchemaMaybe (SchemaGraph s)
   | SchemaList (SchemaGraph s)
@@ -98,6 +113,7 @@ $(genSingletons [''SchemaGraph])
 
 -- | Constraints to be put on results for a given schema type.
 type family ResultConstraints (schema :: SchemaGraphK) result :: Kind.Constraint where
+  ResultConstraints ('SchemaScalar _) result = GraphQLScalar result
   ResultConstraints ('SchemaEnum _) result = GraphQLEnum result
   ResultConstraints _ _ = ()
 
@@ -342,6 +358,7 @@ generateGetterDecs GetterDecs{..} = do
       t -> error $ "Could not get object schema: " ++ show t
     fromSchemaType schema = case unSig schema of
       AppT (PromotedT ty) inner
+        | ty == 'SchemaScalar -> [t| ToScalar $(pure inner) |]
         | ty == 'SchemaEnum -> [t| ToEnum $(pure inner) |]
         | ty == 'SchemaMaybe -> [t| Maybe $(fromSchemaType inner) |]
         | ty == 'SchemaList -> [t| [$(fromSchemaType inner)] |]

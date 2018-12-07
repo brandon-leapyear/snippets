@@ -103,7 +103,7 @@ main = do
                 , asObject [("x", Aeson.Bool False)]
                 ]
               )
-            , ("date", Aeson.String "12/25/1970")
+            , ("date", Aeson.String "1970-12-25")
             , ("state", Aeson.String "OPEN")
             ]
         ) :: Object MySchema
