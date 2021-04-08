@@ -17,7 +17,7 @@ while [[ $# -gt 0 ]]; do
         (--help) usage; exit 0 ;;
         (*)
             if [[ -z "${SCRIPT}" ]]; then
-                SCRIPT="$(cat "$1" | xargs echo)"
+                SCRIPT="$(cat "$1" | jq -Rs)"
             else
                 usage; exit 1
             fi
@@ -31,9 +31,12 @@ if [[ -z "${SCRIPT}" ]]; then
 fi
 
 CURL_ARGS=(
-    -H "Authorization: Bearer ${TOKEN}"
     -H "Accept: application/vnd.github.antiope-preview+json"
-    --data "{\"query\": \"${SCRIPT}\", \"variables\": ${VARS}}"
+    --data "{\"query\": ${SCRIPT}, \"variables\": ${VARS}}"
 )
+
+if [[ -n "${TOKEN}" ]]; then
+    CURL_ARGS+=(-H "Authorization: Bearer ${TOKEN}")
+fi
 
 curl "${CURL_ARGS[@]}" https://api.github.com/graphql
