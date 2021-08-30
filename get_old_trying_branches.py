@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import tempfile
+import webbrowser
 from pathlib import Path
 from typing import NamedTuple, Optional
 
@@ -82,15 +83,17 @@ def main():
 
     print(f'\nStale trying branches:\n{[branch.name for branch in stale_trying_branches]}')
 
-    cmd = 'open -a "Google Chrome" {}'.format(
-        ' '.join(
-            f'https://github.com/{repo_owner}/{repo_name}/pull/{branch.pr_num}'
-            for branch in stale_trying_branches
-        )
-    )
-    print(f'\nCopy/paste the below in Terminal to open all PRs in Chrome:\n{cmd}')
+    res = input('\nOpen PRs in browser? (y/n) ')
+    if res == 'y':
+        browser = webbrowser.get()
+        for i, branch in enumerate(stale_trying_branches):
+            url = f'https://github.com/{repo_owner}/{repo_name}/pull/{branch.pr_num}'
+            if i == 0:
+                browser.open_new(url)
+            else:
+                browser.open_new_tab(url)
 
-    res = input('\nDelete branches? (y/n) ')
+    res = input('\nDelete all of these branches? (y/n) ')
     if res != 'y':
         print('Aborted.')
         return
