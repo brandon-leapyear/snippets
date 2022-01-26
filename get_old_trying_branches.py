@@ -144,7 +144,7 @@ class GqlExecutor(NamedTuple):
 
             response = json.loads(out.decode())
 
-            if 'errors' in response:
+            if 'errors' in response or 'data' not in response:
                 raise Exception(f'Got errors in response: {json.dumps(response, indent=4)}')
 
             return response['data']
