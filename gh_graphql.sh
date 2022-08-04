@@ -1,13 +1,13 @@
 #!/bin/bash
 
-set -u -o pipefail
+set -eu -o pipefail
 
 SCRIPT=
 VARS='{}'
 TOKEN=
 
 usage() {
-    echo "Usage: ${0} [--vars VARS] [--token TOKEN] FILE"
+    echo "Usage: ${0} [--vars VARS] [--token TOKEN] FILE [FILE ...]"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -16,11 +16,7 @@ while [[ $# -gt 0 ]]; do
         (--token) shift; TOKEN="$1" ;;
         (--help) usage; exit 0 ;;
         (*)
-            if [[ -z "${SCRIPT}" ]]; then
-                SCRIPT="$(cat "$1" | jq -Rs)"
-            else
-                usage; exit 1
-            fi
+            SCRIPT="${SCRIPT}"$'\n'"$(cat "$1")"
         ;;
     esac
     shift
@@ -32,11 +28,12 @@ fi
 
 CURL_ARGS=(
     -H "Accept: application/vnd.github.antiope-preview+json"
-    --data "{\"query\": ${SCRIPT}, \"variables\": ${VARS}}"
+    --data "{\"query\": $(jq -Rs <<< "${SCRIPT}"), \"variables\": ${VARS}}"
 )
 
 if [[ -n "${TOKEN}" ]]; then
     CURL_ARGS+=(-H "Authorization: Bearer ${TOKEN}")
 fi
 
-curl "${CURL_ARGS[@]}" https://api.github.com/graphql
+set -x
+curl "${CURL_ARGS[@]}" https://api.github.com/graphql | jq .
